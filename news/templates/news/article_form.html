@@ -1,0 +1,16 @@
+{% extends "news/base.html" %}
+
+{% block title %}{{ page_title }} | News{% endblock %}
+
+{% block content %}
+    <h1>{{ page_title }}</h1>
+    <p>Saving submits this article for editorial approval.</p>
+
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Save for review</button>
+    </form>
+
+    <a href="{% url 'news:home' %}">Back to home</a>
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "news/base.html" %}
+
+{% block title %}{{ article.title }} | News{% endblock %}
+
+{% block content %}
+    <article>
+        <h1>{{ article.title }}</h1>
+
+        <p>
+            By {{ article.author.username }}
+            · {{ article.created_at|date:"j M Y" }}
+            {% if article.publisher %}
+                · {{ article.publisher.name }}
+            {% endif %}
+        </p>
+
+        {% if article.image %}
+            <figure>
+                <img src="{{ article.image.url }}"
+                     alt="{{ article.title }}">
+
+                {% if article.caption %}
+                    <figcaption>{{ article.caption }}</figcaption>
+                {% endif %}
+            </figure>
+        {% endif %}
+
+        {{ article.content|linebreaks }}
+    </article>
+
+    <a href="{% url 'news:home' %}">Back to latest news</a>
+{% endblock %}

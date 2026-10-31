@@ -1,0 +1,38 @@
+{% extends "news/base.html" %}
+
+{% block title %}Manage Articles | News{% endblock %}
+
+{% block content %}
+    <h1>Manage articles</h1>
+
+    <a href="{% url 'news:review_queue' %}">Pending review queue</a>
+
+    {% for article in articles %}
+        <article>
+            <h2>
+                <a href="{% url 'news:article_review' article.pk %}">
+                    {{ article.title }}
+                </a>
+            </h2>
+
+            <p>
+                By {{ article.author.username }}
+                {% if article.publisher %}
+                    · {{ article.publisher.name }}
+                {% else %}
+                    · Independent
+                {% endif %}
+            </p>
+
+            <p>
+                {% if article.approved %}
+                    Approved
+                {% else %}
+                    Pending approval
+                {% endif %}
+            </p>
+        </article>
+    {% empty %}
+        <p>No articles are available for you to manage.</p>
+    {% endfor %}
+{% endblock %}

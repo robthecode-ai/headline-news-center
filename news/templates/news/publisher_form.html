@@ -1,0 +1,17 @@
+{% extends "news/base.html" %}
+
+{% block title %}Create publisher | News{% endblock %}
+
+{% block content %}
+    <h1>Create a publisher</h1>
+
+    <p>You will be added as an editor of this publisher.</p>
+
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Create publisher</button>
+    </form>
+
+    <p><a href="{% url 'news:home' %}">Cancel</a></p>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "news/base.html" %}
+
+{% block title %}Review Queue | News{% endblock %}
+
+{% block content %}
+    <h1>Review queue</h1>
+
+    {% for article in articles %}
+        <article>
+            <h2>
+                <a href="{% url 'news:article_review' article.pk %}">
+                    {{ article.title }}
+                </a>
+            </h2>
+
+            <p>
+                By {{ article.author.username }}
+                {% if article.publisher %}
+                    · {{ article.publisher.name }}
+                {% else %}
+                    · Independent
+                {% endif %}
+            </p>
+        </article>
+    {% empty %}
+        <p>No articles are awaiting approval.</p>
+    {% endfor %}
+{% endblock %}

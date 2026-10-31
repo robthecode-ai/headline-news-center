@@ -1,0 +1,20 @@
+{% extends "news/base.html" %}
+
+{% block title %}Delete article | News{% endblock %}
+
+{% block content %}
+    <h1>Delete article</h1>
+
+    <p>Delete "{{ article.title }}"? This cannot be undone.</p>
+
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit">Delete article</button>
+    </form>
+
+    {% if user.role == "editor" %}
+        <a href="{% url 'news:review_queue' %}">Cancel</a>
+    {% else %}
+        <a href="{% url 'news:my_articles' %}">Cancel</a>
+    {% endif %}
+{% endblock %}

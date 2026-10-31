@@ -1,0 +1,22 @@
+{% extends "news/base.html" %}
+
+{% block title %}My publishers | News{% endblock %}
+
+{% block content %}
+    <h1>My publishers</h1>
+
+    <p>
+        <a href="{% url 'news:publisher_create' %}">
+            Create publisher
+        </a>
+    </p>
+
+    {% for publisher in publishers %}
+        <article>
+            <h2>{{ publisher.name }}</h2>
+            <p><a href="{% url 'news:publisher_team' publisher.pk %}">Manage team</a></p>
+        </article>
+    {% empty %}
+        <p>You do not manage any publishers yet.</p>
+    {% endfor %}
+{% endblock %}

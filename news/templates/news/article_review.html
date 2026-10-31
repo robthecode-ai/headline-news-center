@@ -1,0 +1,43 @@
+{% extends "news/base.html" %}
+
+{% block title %}Review: {{ article.title }} | News{% endblock %}
+
+{% block content %}
+    <h1>{{ article.title }}</h1>
+    <p>By {{ article.author.username }}</p>
+
+    {% if article.image %}
+        <figure>
+            <img src="{{ article.image.url }}"
+                 alt="{{ article.title }}">
+
+            {% if article.caption %}
+                <figcaption>{{ article.caption }}</figcaption>
+            {% endif %}
+        </figure>
+    {% endif %}
+
+    {{ article.content|linebreaks }}
+
+    <p><a href="{% url 'news:article_edit' article.pk %}">Edit article</a></p>
+    <p><a href="{% url 'news:article_delete' article.pk %}">Delete</a></p>
+
+    {% if article.approved %}
+        <p>This article is approved.</p>
+    {% endif %}
+
+    {% if not article.approved or not article.email_sent or not article.api_logged %}
+        <form method="post"
+            action="{% url 'news:article_approve' article.pk %}">
+            {% csrf_token %}
+
+            {% if article.approved %}
+                <button type="submit">Retry publication</button>
+            {% else %}
+                <button type="submit">Approve for publication</button>
+            {% endif %}
+        </form>
+    {% endif %}
+
+    <p><a href="{% url 'news:review_queue' %}">Back to review queue</a></p>
+{% endblock %}

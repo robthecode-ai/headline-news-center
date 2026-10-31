@@ -1,0 +1,15 @@
+{% extends "news/base.html" %}
+
+{% block title %}{{ page_title }} | News{% endblock %}
+
+{% block content %}
+    <h1>{{ page_title }}</h1>
+
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Save newsletter</button>
+    </form>
+
+    <a href="{% url 'news:newsletter_list' %}">Cancel</a>
+{% endblock %}

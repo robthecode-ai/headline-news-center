@@ -1,0 +1,16 @@
+{% extends "news/base.html" %}
+
+{% block title %}Subscriptions | News{% endblock %}
+
+{% block content %}
+    <h1>Manage subscriptions</h1>
+    <p>Choose the publishers and journalists you want to follow.</p>
+
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Save subscriptions</button>
+    </form>
+
+    <a href="{% url 'news:subscribed_articles' %}">View my feed</a>
+{% endblock %}

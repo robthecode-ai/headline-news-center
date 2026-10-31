@@ -1,0 +1,23 @@
+{% extends "news/base.html" %}
+
+{% block title %}Create account | News{% endblock %}
+{% block page_class %}auth-page{% endblock %}
+
+{% block content %}
+    <h1>Create an account</h1>
+    <p>
+        Register as a reader, journalist, or editor.
+        Editors can create publishers and manage their teams.
+    </p>
+
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Create account</button>
+    </form>
+
+    <p>
+        Already have an account?
+        <a href="{% url 'news:login' %}">Log in</a>
+    </p>
+{% endblock %}

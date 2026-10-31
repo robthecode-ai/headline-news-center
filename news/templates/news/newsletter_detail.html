@@ -1,0 +1,43 @@
+{% extends "news/base.html" %}
+
+{% block title %}{{ newsletter.title }} | News{% endblock %}
+
+{% block content %}
+    <h1>{{ newsletter.title }}</h1>
+
+    {% if can_manage %}
+        <p>
+            <a href="{% url 'news:newsletter_edit' newsletter.pk %}">
+                Edit newsletter
+            </a>
+            <a href="{% url 'news:newsletter_delete' newsletter.pk %}">
+                Delete newsletter
+            </a>
+        </p>
+    {% endif %}
+
+    <p>By {{ newsletter.author.username }}</p>
+
+    {% if newsletter.publisher %}
+        <p>Published by {{ newsletter.publisher.name }}</p>
+    {% endif %}
+
+    {{ newsletter.description|linebreaks }}
+
+    <h2>Articles in this newsletter</h2>
+
+    {% for article in articles %}
+        <article>
+            <h3>
+                <a href="{% url 'news:article_detail' article.pk %}">
+                    {{ article.title }}
+                </a>
+            </h3>
+            <p>{{ article.content|truncatewords:40 }}</p>
+        </article>
+    {% empty %}
+        <p>No approved articles are currently available in this newsletter.</p>
+    {% endfor %}
+
+    <a href="{% url 'news:newsletter_list' %}">All newsletters</a>
+{% endblock %}

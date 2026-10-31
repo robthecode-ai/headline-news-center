@@ -1,0 +1,52 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}News{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'news/css/style.css' %}">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container">
+            <p class="site-name">Headline News Center</p>
+            <nav aria-label="Main navigation">
+                <a href="{% url 'news:home' %}">Home</a>
+                <a href="{% url 'news:newsletter_list' %}">Newsletters</a>
+
+                {% if user.is_authenticated %}
+
+                    {% if user.role == "journalist" %}
+                        <a href="{% url 'news:my_articles' %}">My articles</a>
+                    {% elif user.role == "editor" %}
+                        <a href="{% url 'news:review_queue' %}">Review queue</a>
+                        <a href="{% url 'news:manage_articles' %}">Manage articles</a>
+                        <a href="{% url 'news:my_publishers' %}">My publishers</a>
+                    {% elif user.role == "reader" %}
+                        <a href="{% url 'news:subscribed_articles' %}">My feed</a>
+                        <a href="{% url 'news:subscriptions' %}">Subscriptions</a>
+                    {% endif %}
+
+                    <form method="post" action="{% url 'news:logout' %}">
+                        {% csrf_token %}
+                        <button type="submit">Log out</button>
+                        <span>Signed in as {{ user.username }}</span>
+                    </form>
+                {% else %}
+                    <a href="{% url 'news:login' %}">Log in</a>
+                    <a href="{% url 'news:register' %}">Create account</a>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+
+    <main class="container {% block page_class %}{% endblock %}">
+        {% for message in messages %}
+            <p role="status">{{ message }}</p>
+        {% endfor %}
+        {% block content %}
+        {% endblock %}
+    </main>
+</body>
+</html>

@@ -1,0 +1,74 @@
+{% extends "news/base.html" %}
+
+{% block title %}Home | News{% endblock %}
+
+{% block content %}
+    {% if featured_article %}
+        <div class="news-layout">
+            <article class="lead-story">
+                <p class="section-label">Latest story</p>
+
+                <h1>
+                    <a href="{% url 'news:article_detail' featured_article.pk %}">
+                        {{ featured_article.title }}
+                    </a>
+                </h1>
+
+                <p class="story-meta">
+                    By {{ featured_article.author.username }}
+                    · {{ featured_article.created_at|date:"j M Y" }}
+                </p>
+
+                {% if featured_article.image %}
+                    <figure>
+                        <img class="lead-image"
+                             src="{{ featured_article.image.url }}"
+                             alt="{{ featured_article.title }}">
+
+                        {% if featured_article.caption %}
+                            <figcaption>
+                                {{ featured_article.caption }}
+                            </figcaption>
+                        {% endif %}
+                    </figure>
+                {% endif %}
+
+                <p>{{ featured_article.content|truncatewords:60 }}</p>
+
+                <a href="{% url 'news:article_detail' featured_article.pk %}">
+                    Read full story
+                </a>
+            </article>
+
+            <aside class="latest-stories" aria-labelledby="latest-heading">
+                <h2 id="latest-heading">More stories</h2>
+
+                {% for article in latest_articles %}
+                    <article class="latest-story">
+                        {% if article.image %}
+                            <img class="story-thumbnail"
+                                 src="{{ article.image.url }}"
+                                 alt=""
+                                 loading="lazy">
+                        {% endif %}
+
+                        <h3>
+                            <a href="{% url 'news:article_detail' article.pk %}">
+                                {{ article.title }}
+                            </a>
+                        </h3>
+
+                        <p class="story-meta">
+                            {{ article.created_at|date:"j M Y" }}
+                        </p>
+                    </article>
+                {% empty %}
+                    <p>No other stories have been published yet.</p>
+                {% endfor %}
+            </aside>
+        </div>
+    {% else %}
+        <h1>Latest news</h1>
+        <p>No articles have been published yet. Check back soon.</p>
+    {% endif %}
+{% endblock %}

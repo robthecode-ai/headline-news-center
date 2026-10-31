@@ -1,0 +1,24 @@
+{% extends "news/base.html" %}
+
+{% block title %}Manage team | News{% endblock %}
+
+{% block content %}
+    <h1>Manage team: {{ publisher.name }}</h1>
+
+    <p>
+        Select the registered editors and journalists who work
+        for this publisher. Selected editors can manage its team.
+    </p>
+
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Save team</button>
+    </form>
+
+    <p>
+        <a href="{% url 'news:my_publishers' %}">
+            Back to my publishers
+        </a>
+    </p>
+{% endblock %}

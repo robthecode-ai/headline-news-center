@@ -1,0 +1,12 @@
+# Private settings
+.env
+
+# Python environment and generated files
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local databases and uploads
+db.sqlite3
+db.sqlite3-journal
+/media/

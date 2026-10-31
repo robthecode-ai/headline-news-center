@@ -1,0 +1,22 @@
+{% extends "news/base.html" %}
+
+{% block title %}My Feed | News{% endblock %}
+
+{% block content %}
+    <h1>My feed</h1>
+    <a href="{% url 'news:subscriptions' %}">Manage subscriptions</a>
+
+    {% for article in articles %}
+        <article>
+            <h2>
+                <a href="{% url 'news:article_detail' article.pk %}">
+                    {{ article.title }}
+                </a>
+            </h2>
+            <p>By {{ article.author.username }}</p>
+            <p>{{ article.content|truncatewords:40 }}</p>
+        </article>
+    {% empty %}
+        <p>No approved articles match your subscriptions yet.</p>
+    {% endfor %}
+{% endblock %}
