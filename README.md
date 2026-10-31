@@ -47,8 +47,15 @@ Log in using your MariaDB root password:
 mysql -u root -p
 ```
 
-If mysql is not recognised, open the installed MariaDB command-line
-client instead.
+If PowerShell does not recognise mysql, find your MariaDB installation's
+bin folder and run mysql.exe using its full path. For example:
+
+```powershell
+& 'C:\Program Files\MariaDB 12.3\bin\mysql.exe' -u root -p
+```
+
+Replace 12.3 with your installed version. Enter your password when
+prompted; nothing appears while you type.
 
 At the database prompt, run:
 
@@ -59,23 +66,37 @@ EXIT;
 
 ### 4. Configure local settings
 
-Back in PowerShell, run:
+Copy the example settings file:
 
 ```powershell
 Copy-Item .env.example .env
+```
+
+Generate your Django secret key:
+
+```powershell
 python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+```
+
+Copy the generated key, then open .env:
+
+```powershell
 notepad .env
 ```
 
-In .env:
+Replace these values and keep the quotes around the key and password:
 
-- Replace DJANGO_SECRET_KEY with the generated key, keeping the quotes.
-- Set NEWS_DB_NAME to news_db.
-- Set NEWS_DB_USER to root.
-- Replace NEWS_DB_PASSWORD with your MariaDB password, keeping the quotes.
-- Leave the other values unchanged for the default local setup.
+```ini
+DJANGO_SECRET_KEY='paste-your-generated-key-here'
+NEWS_DB_NAME=news_db
+NEWS_DB_USER=root
+NEWS_DB_PASSWORD='your-MariaDB-password'
+```
 
-Save the file. Never upload .env to GitHub.
+Use the database name you created in step 3. Leave the other settings
+unchanged for the default local setup.
+
+Save and close the file. Keep .env private; do not upload it to GitHub.
 
 ### 5. Prepare and start the application
 
