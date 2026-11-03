@@ -5,7 +5,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from .models import ApprovedArticleLog, Article
-from .permissions import editable_articles
+from .permissions import editable_articles, visible_articles
 from .serializers import ApprovalLogRequestSerializer, ArticleSerializer
 
 
@@ -13,9 +13,9 @@ from .serializers import ApprovalLogRequestSerializer, ArticleSerializer
 def article_list(request):
     """List approved articles or accept a journalist's submission."""
     if request.method == "GET":
-        articles = Article.objects.filter(
-            approved=True,
-        ).order_by("-created_at")
+        articles = visible_articles(request.user).order_by(
+            "-created_at",
+        )
 
         serializer = ArticleSerializer(
             articles,
@@ -48,9 +48,8 @@ def article_detail(request, pk):
     """Retrieve approved content or manage an authorised article."""
     if request.method == "GET":
         article = get_object_or_404(
-            Article,
+            visible_articles(request.user),
             pk=pk,
-            approved=True,
         )
 
         serializer = ArticleSerializer(
@@ -116,18 +115,25 @@ def subscribed_articles(request):
 
 @api_view(["POST"])
 def approved_article_log(request):
-    """Record an approved article within the editor's permitted scope."""
-    if not request.user.groups.filter(name="Editor").exists():
+    """Log an article published by its authorised editor or author."""
+    if not request.user.groups.filter(
+        name__in=("Editor", "Journalist"),
+    ).exists():
         return Response(
-            {"detail": "Editors only."},
+            {"detail": "Journalists and editors only."},
             status=status.HTTP_403_FORBIDDEN,
         )
 
     serializer = ApprovalLogRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
+    articles = editable_articles(request.user)
+
+    if request.user.groups.filter(name="Journalist").exists():
+        articles = articles.filter(publisher__isnull=True)
+
     article = get_object_or_404(
-        editable_articles(request.user),
+        articles,
         pk=serializer.validated_data["article_id"],
         approved=True,
     )

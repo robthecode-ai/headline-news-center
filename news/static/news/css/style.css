@@ -288,3 +288,7 @@ main select[multiple] {
 main article {
     margin-bottom: 32px;
 }
+
+main > a + article {
+    margin-top: 24px;
+}

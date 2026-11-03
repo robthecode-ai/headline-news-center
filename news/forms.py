@@ -1,5 +1,6 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
+from django.db.models import Q
 
 from .models import Article, Newsletter, Publisher, User
 
@@ -12,6 +13,17 @@ class RegistrationForm(UserCreationForm):
         choices=User.ROLE_CHOICES,
         initial="reader",
     )
+
+    def clean_email(self):
+        """Normalise the email and reject an existing address."""
+        email = self.cleaned_data["email"].strip().lower()
+
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError(
+                "An account with this email address already exists."
+            )
+
+        return email
 
     class Meta(UserCreationForm.Meta):
         """Expose account details and the application role."""
@@ -63,7 +75,7 @@ class SubscriptionForm(forms.ModelForm):
 
 
 class NewsletterForm(forms.ModelForm):
-    """Collect newsletter details and approved article selections."""
+    """Collect newsletter details and authorised article selections."""
 
     class Meta:
         """Define the editable newsletter fields."""
@@ -72,20 +84,75 @@ class NewsletterForm(forms.ModelForm):
         fields = ("title", "description", "publisher", "articles")
 
     def __init__(self, *args, user, **kwargs):
-        """Restrict publisher choices and exclude unapproved articles."""
+        """Offer approved articles within the user's publishing scope."""
         super().__init__(*args, **kwargs)
+        self.user = user
 
         if user.role == "journalist":
             publishers = Publisher.objects.filter(journalists=user)
         elif user.role == "editor":
             publishers = Publisher.objects.filter(editors=user)
+            self.fields["publisher"].required = True
         else:
             publishers = Publisher.objects.none()
 
         self.fields["publisher"].queryset = publishers.distinct()
-        self.fields["articles"].queryset = Article.objects.filter(
+
+        articles = Article.objects.filter(
             approved=True,
-        ).order_by("-created_at")
+            publisher__in=publishers,
+        )
+
+        if user.role == "journalist":
+            articles = Article.objects.filter(
+                Q(publisher__in=publishers)
+                | Q(author=user, publisher__isnull=True),
+                approved=True,
+            )
+
+        self.fields["articles"].queryset = articles.select_related(
+            "publisher",
+        ).distinct().order_by("-created_at")
+
+        self.fields["articles"].help_text = (
+            "Choose articles from the selected publisher. "
+            "For an independent newsletter, choose only your own "
+            "published independent articles."
+        )
+
+    def clean(self):
+        """Reject article selections that do not match the newsletter."""
+        cleaned_data = super().clean()
+
+        if (
+            "publisher" not in cleaned_data
+            or "articles" not in cleaned_data
+        ):
+            return cleaned_data
+
+        publisher = cleaned_data["publisher"]
+        articles = cleaned_data["articles"]
+
+        if publisher:
+            invalid_articles = articles.exclude(publisher=publisher)
+            message = (
+                "All selected articles must belong to "
+                "the selected publisher."
+            )
+        else:
+            invalid_articles = articles.exclude(
+                author=self.user,
+                publisher__isnull=True,
+            )
+            message = (
+                "Independent newsletters may contain only your own "
+                "published independent articles."
+            )
+
+        if invalid_articles.exists():
+            self.add_error("articles", message)
+
+        return cleaned_data
 
 
 class PublisherForm(forms.ModelForm):

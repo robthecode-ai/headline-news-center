@@ -13,7 +13,25 @@
                     {{ article.title }}
                 </a>
             </h2>
+
             <p>By {{ article.author.username }}</p>
+
+            <p>
+                {% if article.publisher %}
+                    Publisher: {{ article.publisher.name }}
+                {% else %}
+                    Independent
+                {% endif %}
+            </p>
+
+            {% if article.publisher_id in followed_publisher_ids %}
+                <p>You follow this publisher.</p>
+            {% endif %}
+
+            {% if article.author_id in followed_journalist_ids %}
+                <p>You follow this journalist.</p>
+            {% endif %}
+
             <p>{{ article.content|truncatewords:40 }}</p>
         </article>
     {% empty %}

@@ -1,3 +1,7 @@
+## Public repository
+
+https://github.com/robthecode-ai/headline-news-center
+
 # Headline News Center
 
 A Django news application where Readers follow news, Journalists write
@@ -122,22 +126,52 @@ python manage.py runserver
 ## Using the app
 
 A fresh installation has no accounts or articles.
+Register as a Reader, Journalist, or Editor using a unique email address.
+Application roles do not grant Django admin access.
 
-1. Register an Editor account. Open My publishers, create a publisher,
-   then use Manage team to assign registered Editors and Journalists.
-   Keep yourself selected when saving.
-2. Register a Journalist account. After an Editor adds it to a publisher,
-   use My articles to submit an article for that publisher. Leaving the
-   publisher blank creates an independent article.
-3. As an Editor, use Review queue to review and approve the article.
-   Editors manage their publishers' articles and independent articles.
-4. Register a Reader account. Use Subscriptions to follow publishers or
-   journalists, then open My feed.
+### Editors
 
-New and edited articles require approval before appearing publicly.
-Journalists and Editors can also create newsletters using approved articles.
+Open My publishers to create a publisher and manage its team.
+Journalists and other Editors must register before you can assign them.
+Keep yourself selected when saving the team.
 
-Subscriber emails print in the server terminal during local development.
+Use Review queue to approve your publishers' articles.
+Editors can only browse and manage articles and newsletters from
+publishers they belong to.
+
+### Journalists
+
+Use My articles to create and manage your articles.
+
+For publisher-backed articles, an Editor must first add you to that
+publisher's team. Select the publisher when writing the article,
+then wait for editorial approval.
+
+For independent articles, leave the publisher empty. Save the article,
+then select Publish in My articles.
+
+Editing a published article makes it unpublished again. Publisher-backed
+articles need editorial approval again; independent articles can be
+republished by their author.
+
+### Readers
+
+Use Subscriptions to follow publishers and Journalists.
+My feed shows matching published articles, their sources, and which
+subscriptions matched.
+
+### Newsletters and notifications
+
+Journalists and Editors can create newsletters.
+
+Publisher newsletters may contain only approved articles from their
+selected publisher. Editors must select a publisher they belong to.
+Independent newsletters may contain only their Journalist author's
+published independent articles.
+
+Publication notifies subscribers and logs the article through the API.
+Creating a newsletter also generates subscriber emails.
+Emails print in the server terminal during local development.
 
 Django admin is optional and is only for maintenance. To create an
 administrator, run:
@@ -166,7 +200,8 @@ Authorization: Token YOUR_TOKEN
 | POST | /api/approved/ | Log an approved article |
 
 Use http://127.0.0.1:8000 before each endpoint.
-Replace <id> with an article ID. Access depends on role and publisher membership.
+Replace <id> with an article ID. Access depends on role and publisher
+membership. Editors can only retrieve articles from their publishers.
 
 ## Tests
 

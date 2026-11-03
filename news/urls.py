@@ -88,4 +88,9 @@ urlpatterns = [
         views.publisher_team,
         name="publisher_team",
     ),
+    path(
+        "articles/<int:pk>/publish/",
+        views.article_publish,
+        name="article_publish",
+    ),
 ]

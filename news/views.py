@@ -1,6 +1,6 @@
 from django.shortcuts import get_object_or_404, redirect, render
 
-from .models import Article, Newsletter, Publisher
+from .models import Article, Publisher
 from .forms import (
     ArticleForm,
     NewsletterForm,
@@ -9,7 +9,12 @@ from .forms import (
     RegistrationForm,
     SubscriptionForm,
 )
-from .permissions import editable_articles, editable_newsletters
+from .permissions import (
+    editable_articles,
+    editable_newsletters,
+    visible_articles,
+    visible_newsletters,
+)
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseForbidden
 from django.db.models import Q
@@ -22,9 +27,7 @@ from smtplib import SMTPException
 
 def home(request):
     """Feature the newest approved story and list recent articles."""
-    articles = Article.objects.filter(
-        approved=True,
-    ).select_related(
+    articles = visible_articles(request.user).select_related(
         "author",
         "publisher",
     ).order_by("-created_at", "-pk")
@@ -49,11 +52,10 @@ def home(request):
 
 
 def article_detail(request, pk):
-    """Display one approved article or return a 404 response."""
+    """Display an approved article within the user's browsing scope."""
     article = get_object_or_404(
-        Article,
+        visible_articles(request.user),
         pk=pk,
-        approved=True,
     )
 
     return render(
@@ -90,7 +92,7 @@ def my_articles(request):
 
     articles = Article.objects.filter(
         author=request.user,
-    ).order_by("-created_at")
+    ).select_related("publisher").order_by("-created_at")
 
     return render(
         request,
@@ -106,8 +108,7 @@ def review_queue(request):
         return HttpResponseForbidden("Editors only.")
 
     articles = Article.objects.filter(
-        Q(publisher__editors=request.user)
-        | Q(publisher__isnull=True),
+        publisher__editors=request.user,
         approved=False,
     ).distinct().order_by("-created_at")
 
@@ -286,26 +287,46 @@ def subscriptions(request):
 
 @login_required
 def subscribed_articles(request):
-    """Display approved articles matching the reader's subscriptions."""
+    """Display subscribed articles and explain why they appear."""
     if not request.user.groups.filter(name="Reader").exists():
         return HttpResponseForbidden("Readers only.")
 
+    followed_publisher_ids = set(
+        request.user.subscribed_publishers.values_list(
+            "pk",
+            flat=True,
+        )
+    )
+    followed_journalist_ids = set(
+        request.user.subscribed_journalists.values_list(
+            "pk",
+            flat=True,
+        )
+    )
+
     articles = Article.objects.filter(
-        Q(publisher__in=request.user.subscribed_publishers.all())
-        | Q(author__in=request.user.subscribed_journalists.all()),
+        Q(publisher_id__in=followed_publisher_ids)
+        | Q(author_id__in=followed_journalist_ids),
         approved=True,
+    ).select_related(
+        "author",
+        "publisher",
     ).distinct().order_by("-created_at")
 
     return render(
         request,
         "news/subscribed_articles.html",
-        {"articles": articles},
+        {
+            "articles": articles,
+            "followed_publisher_ids": followed_publisher_ids,
+            "followed_journalist_ids": followed_journalist_ids,
+        },
     )
 
 
 def newsletter_list(request):
     """Display available newsletters, newest first."""
-    newsletters = Newsletter.objects.select_related(
+    newsletters = visible_newsletters(request.user).select_related(
         "author",
         "publisher",
     ).order_by("-created_at")
@@ -319,9 +340,12 @@ def newsletter_list(request):
 
 def newsletter_detail(request, pk):
     """Display a newsletter and its currently approved articles."""
-    newsletter = get_object_or_404(Newsletter, pk=pk)
-    articles = newsletter.articles.filter(
-        approved=True,
+    newsletter = get_object_or_404(
+        visible_newsletters(request.user),
+        pk=pk,
+    )
+    articles = visible_articles(request.user).filter(
+        newsletters=newsletter,
     ).order_by("-created_at")
 
     can_manage = (
@@ -532,3 +556,36 @@ def publisher_team(request, pk):
             "publisher": publisher,
         },
     )
+
+
+@login_required
+@require_POST
+def article_publish(request, pk):
+    """Publish an independent article owned by the current journalist."""
+    if not request.user.groups.filter(name="Journalist").exists():
+        return HttpResponseForbidden("Journalists only.")
+
+    article = get_object_or_404(
+        Article,
+        pk=pk,
+        author=request.user,
+        publisher__isnull=True,
+    )
+
+    errors = publish_article(article, request.user)
+
+    if errors:
+        messages.warning(
+            request,
+            "Article published, but "
+            + " ".join(errors)
+            + " Use Retry publication to retry unfinished steps.",
+        )
+    else:
+        messages.success(
+            request,
+            "Article published. API logging and subscriber "
+            "notification processing are complete.",
+        )
+
+    return redirect("news:my_articles")

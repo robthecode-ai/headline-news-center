@@ -4,12 +4,15 @@
 
 {% block content %}
     <h1>{{ page_title }}</h1>
-    <p>Saving submits this article for editorial approval.</p>
+    <p>
+        Articles with a publisher require editorial approval.
+        Independent articles can be published from My articles after saving.
+    </p>
 
     <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
         {{ form.as_p }}
-        <button type="submit">Save for review</button>
+        <button type="submit">Save article</button>
     </form>
 
     <a href="{% url 'news:home' %}">Back to home</a>

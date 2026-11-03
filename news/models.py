@@ -14,6 +14,8 @@ class User(AbstractUser):
         ("editor", "Editor"),
     ]
 
+    email = models.EmailField(unique=True)
+
     role = models.CharField(
         max_length=10,
         choices=ROLE_CHOICES,
@@ -36,6 +38,8 @@ class User(AbstractUser):
 
     def save(self, *args, **kwargs):
         """Save the user and synchronise their role group."""
+
+        self.email = self.email.strip().lower()
 
         role_groups = {
             "reader": "Reader",

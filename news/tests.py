@@ -5,6 +5,7 @@ from django.core import mail
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.db import IntegrityError, transaction
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -15,6 +16,7 @@ from .models import (
     Publisher,
     User,
 )
+from .forms import NewsletterForm
 
 
 @override_settings(
@@ -43,16 +45,19 @@ class NewsApplicationTests(TestCase):
         )
         self.journalist = User.objects.create_user(
             username="test_journalist",
+            email="existing-journalist@example.com",
             password=self.password,
             role="journalist",
         )
         self.other_journalist = User.objects.create_user(
             username="other_journalist",
+            email="other-journalist@example.com",
             password=self.password,
             role="journalist",
         )
         self.editor = User.objects.create_user(
             username="test_editor",
+            email="existing-editor@example.com",
             password=self.password,
             role="editor",
         )
@@ -649,7 +654,7 @@ class NewsApplicationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, self.approved_article.title)
         self.assertContains(response, self.pending_article.title)
-        self.assertContains(response, independent.title)
+        self.assertNotContains(response, independent.title)
         self.assertNotContains(response, self.other_article.title)
 
     def test_reader_cannot_open_editor_management_list(self):
@@ -981,3 +986,600 @@ class NewsApplicationTests(TestCase):
                 pk=self.journalist.pk,
             ).exists()
         )
+
+    def test_registration_rejects_duplicate_email(self):
+        """Reject an existing email regardless of capitalisation."""
+        for index, email in enumerate(
+            ("reader@example.com", "READER@EXAMPLE.COM")
+        ):
+            with self.subTest(email=email):
+                username = f"duplicate_email_{index}"
+
+                response = self.client.post(
+                    reverse("news:register"),
+                    {
+                        "username": username,
+                        "email": email,
+                        "role": "reader",
+                        "password1": self.password,
+                        "password2": self.password,
+                    },
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(
+                    "email",
+                    response.context["form"].errors,
+                )
+                self.assertFalse(
+                    User.objects.filter(username=username).exists()
+                )
+
+    def test_registration_normalises_email(self):
+        """Remove surrounding spaces and store lowercase emails."""
+        response = self.client.post(
+            reverse("news:register"),
+            {
+                "username": "normalised_reader",
+                "email": "  New.Reader@Example.COM  ",
+                "role": "reader",
+                "password1": self.password,
+                "password2": self.password,
+            },
+        )
+
+        self.assertRedirects(response, reverse("news:login"))
+
+        user = User.objects.get(username="normalised_reader")
+        self.assertEqual(user.email, "new.reader@example.com")
+
+    def test_database_rejects_duplicate_email(self):
+        """Protect uniqueness when registration is bypassed."""
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                User.objects.create_user(
+                    username="duplicate_database_email",
+                    email=self.reader.email,
+                    password=self.password,
+                    role="reader",
+                )
+
+    def test_editor_cannot_manage_independent_article(self):
+        """Keep independent articles under their author's control."""
+        article = Article.objects.create(
+            title="Independent article",
+            content="Only its journalist can manage this story.",
+            author=self.journalist,
+        )
+        self.client.force_login(self.editor)
+
+        for route in (
+            "news:article_review",
+            "news:article_edit",
+            "news:article_delete",
+        ):
+            with self.subTest(route=route):
+                response = self.client.get(
+                    reverse(route, args=[article.pk]),
+                )
+                self.assertEqual(response.status_code, 404)
+
+        response = self.client.post(
+            reverse("news:article_approve", args=[article.pk]),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        article.refresh_from_db()
+        self.assertFalse(article.approved)
+
+        self.api.credentials(
+            HTTP_AUTHORIZATION=f"Token {self.editor_token.key}",
+        )
+        response = self.api.delete(
+            reverse("news_api:article_detail", args=[article.pk]),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(
+            Article.objects.filter(pk=article.pk).exists()
+        )
+
+    def test_editor_cannot_manage_independent_newsletter(self):
+        """Exclude independent newsletters from editor management."""
+        newsletter = Newsletter.objects.create(
+            title="Independent newsletter",
+            description="A journalist's independent collection.",
+            author=self.journalist,
+        )
+        self.client.force_login(self.editor)
+
+        response = self.client.get(
+            reverse("news:newsletter_edit", args=[newsletter.pk]),
+        )
+        self.assertEqual(response.status_code, 404)
+
+        response = self.client.post(
+            reverse("news:newsletter_delete", args=[newsletter.pk]),
+        )
+        self.assertEqual(response.status_code, 404)
+
+        self.assertTrue(
+            Newsletter.objects.filter(pk=newsletter.pk).exists()
+        )
+
+    @patch("news.services.requests.post")
+    def test_journalist_can_publish_own_independent_article(
+        self,
+        mock_post,
+    ):
+        """Publish an independent article without repeating delivery."""
+        mock_post.return_value.status_code = 201
+        article = Article.objects.create(
+            title="My independent story",
+            content="An independently published story.",
+            author=self.journalist,
+        )
+        self.reader.subscribed_journalists.add(self.journalist)
+        self.client.force_login(self.journalist)
+
+        url = reverse("news:article_publish", args=[article.pk])
+
+        page = self.client.get(reverse("news:my_articles"))
+        self.assertContains(page, url)
+        self.assertContains(page, self.publisher.name)
+        self.assertNotContains(
+            page,
+            reverse(
+                "news:article_publish",
+                args=[self.pending_article.pk],
+            ),
+        )
+
+        self.assertEqual(self.client.get(url).status_code, 405)
+
+        response = self.client.post(url)
+
+        self.assertRedirects(response, reverse("news:my_articles"))
+        article.refresh_from_db()
+        self.assertTrue(article.approved)
+        self.assertTrue(article.email_sent)
+        self.assertTrue(article.api_logged)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(
+            mock_post.call_args.kwargs["headers"],
+            {
+                "Authorization":
+                    f"Token {self.journalist_token.key}",
+            },
+        )
+
+        self.client.post(url)
+
+        self.assertEqual(mock_post.call_count, 1)
+        self.assertEqual(len(mail.outbox), 1)
+
+    @patch("news.services.requests.post")
+    def test_independent_publish_rejects_unauthorised_requests(
+        self,
+        mock_post,
+    ):
+        """Reject other users and articles requiring editorial approval."""
+        article = Article.objects.create(
+            title="Protected independent story",
+            content="Only the author may publish this.",
+            author=self.journalist,
+        )
+
+        cases = (
+            (self.reader, article, 403),
+            (self.editor, article, 403),
+            (self.other_journalist, article, 404),
+            (self.journalist, self.pending_article, 404),
+        )
+
+        for user, target, expected_status in cases:
+            with self.subTest(user=user.username, article=target.pk):
+                self.client.force_login(user)
+
+                response = self.client.post(
+                    reverse(
+                        "news:article_publish",
+                        args=[target.pk],
+                    ),
+                )
+
+                self.assertEqual(response.status_code, expected_status)
+
+        article.refresh_from_db()
+        self.pending_article.refresh_from_db()
+        self.assertFalse(article.approved)
+        self.assertFalse(self.pending_article.approved)
+        mock_post.assert_not_called()
+
+    def test_independent_logging_respects_publication_permissions(self):
+        """Allow logging by the author without granting wider access."""
+        article = Article.objects.create(
+            title="Published independent story",
+            content="An independent publication.",
+            author=self.journalist,
+            approved=True,
+        )
+        url = reverse("news_api:approved_article_log")
+
+        self.api.credentials(
+            HTTP_AUTHORIZATION=f"Token {self.journalist_token.key}",
+        )
+
+        first = self.api.post(
+            url,
+            {"article_id": article.pk},
+            format="json",
+        )
+        repeated = self.api.post(
+            url,
+            {"article_id": article.pk},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(repeated.status_code, 200)
+
+        publisher_article = self.api.post(
+            url,
+            {"article_id": self.approved_article.pk},
+            format="json",
+        )
+        self.assertEqual(publisher_article.status_code, 404)
+
+        other_token, _ = Token.objects.get_or_create(
+            user=self.other_journalist,
+        )
+
+        for token, expected_status in (
+            (self.editor_token, 404),
+            (other_token, 404),
+            (self.reader_token, 403),
+        ):
+            with self.subTest(user=token.user.username):
+                self.api.credentials(
+                    HTTP_AUTHORIZATION=f"Token {token.key}",
+                )
+                response = self.api.post(
+                    url,
+                    {"article_id": article.pk},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, expected_status)
+
+        self.assertEqual(
+            ApprovedArticleLog.objects.filter(article=article).count(),
+            1,
+        )
+
+    def test_editor_article_browsing_is_publisher_scoped(self):
+        """Restrict Home and direct article links for editors."""
+        independent = Article.objects.create(
+            title="Independent public story",
+            content="A published independent article.",
+            author=self.journalist,
+            approved=True,
+        )
+        self.client.force_login(self.editor)
+
+        response = self.client.get(reverse("news:home"))
+
+        self.assertContains(response, self.approved_article.title)
+        self.assertNotContains(response, self.other_article.title)
+        self.assertNotContains(response, independent.title)
+
+        allowed = self.client.get(
+            reverse(
+                "news:article_detail",
+                args=[self.approved_article.pk],
+            ),
+        )
+        self.assertEqual(allowed.status_code, 200)
+
+        for article in (self.other_article, independent):
+            with self.subTest(article=article.pk):
+                response = self.client.get(
+                    reverse(
+                        "news:article_detail",
+                        args=[article.pk],
+                    ),
+                )
+                self.assertEqual(response.status_code, 404)
+
+    def test_editor_newsletter_browsing_is_publisher_scoped(self):
+        """Restrict newsletter lists and direct links for editors."""
+        own = Newsletter.objects.create(
+            title="Our publisher newsletter",
+            description="Our publisher's news.",
+            author=self.journalist,
+            publisher=self.publisher,
+        )
+        other = Newsletter.objects.create(
+            title="Other publisher newsletter",
+            description="Another publisher's news.",
+            author=self.other_journalist,
+            publisher=self.other_publisher,
+        )
+        independent = Newsletter.objects.create(
+            title="Independent public newsletter",
+            description="An independent collection.",
+            author=self.journalist,
+        )
+        self.client.force_login(self.editor)
+
+        response = self.client.get(reverse("news:newsletter_list"))
+
+        self.assertContains(response, own.title)
+        self.assertNotContains(response, other.title)
+        self.assertNotContains(response, independent.title)
+
+        response = self.client.get(
+            reverse("news:newsletter_detail", args=[own.pk]),
+        )
+        self.assertEqual(response.status_code, 200)
+
+        for newsletter in (other, independent):
+            with self.subTest(newsletter=newsletter.pk):
+                response = self.client.get(
+                    reverse(
+                        "news:newsletter_detail",
+                        args=[newsletter.pk],
+                    ),
+                )
+                self.assertEqual(response.status_code, 404)
+
+    def test_editor_api_reads_are_publisher_scoped(self):
+        """Apply editor visibility rules to API lists and details."""
+        independent = Article.objects.create(
+            title="Independent API story",
+            content="An independent publication.",
+            author=self.journalist,
+            approved=True,
+        )
+        self.api.credentials(
+            HTTP_AUTHORIZATION=f"Token {self.editor_token.key}",
+        )
+
+        response = self.api.get(reverse("news_api:article_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {article["id"] for article in response.data},
+            {self.approved_article.pk},
+        )
+
+        allowed = self.api.get(
+            reverse(
+                "news_api:article_detail",
+                args=[self.approved_article.pk],
+            ),
+        )
+        self.assertEqual(allowed.status_code, 200)
+
+        for article in (self.other_article, independent):
+            with self.subTest(article=article.pk):
+                response = self.api.get(
+                    reverse(
+                        "news_api:article_detail",
+                        args=[article.pk],
+                    ),
+                )
+                self.assertEqual(response.status_code, 404)
+
+    def test_reader_can_browse_across_publishers(self):
+        """Preserve normal article and newsletter browsing for readers."""
+        self.client.force_login(self.reader)
+
+        response = self.client.get(reverse("news:home"))
+        self.assertContains(response, self.approved_article.title)
+        self.assertContains(response, self.other_article.title)
+
+        response = self.client.get(
+            reverse(
+                "news:article_detail",
+                args=[self.other_article.pk],
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+
+        newsletter = Newsletter.objects.create(
+            title="Newsletter for readers",
+            description="Public newsletter content.",
+            author=self.other_journalist,
+            publisher=self.other_publisher,
+        )
+
+        response = self.client.get(
+            reverse("news:newsletter_detail", args=[newsletter.pk]),
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_newsletter_choices_exclude_unauthorised_articles(self):
+        """Offer only approved articles within the user's scope."""
+        for user in (self.journalist, self.editor):
+            with self.subTest(role=user.role):
+                form = NewsletterForm(user=user)
+
+                self.assertEqual(
+                    set(
+                        form.fields["articles"].queryset.values_list(
+                            "pk",
+                            flat=True,
+                        )
+                    ),
+                    {self.approved_article.pk},
+                )
+
+    def test_newsletter_rejects_articles_from_another_publisher(self):
+        """Keep publishers separate even when the user belongs to both."""
+        self.other_publisher.journalists.add(self.journalist)
+
+        form = NewsletterForm(
+            data={
+                "title": "Mixed publisher newsletter",
+                "description": "This must be rejected.",
+                "publisher": self.publisher.pk,
+                "articles": [
+                    self.approved_article.pk,
+                    self.other_article.pk,
+                ],
+            },
+            user=self.journalist,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("articles", form.errors)
+
+    def test_independent_newsletter_requires_own_published_articles(self):
+        """Allow only the author's approved independent stories."""
+        own = Article.objects.create(
+            title="My independent publication",
+            content="An approved independent story.",
+            author=self.journalist,
+            approved=True,
+        )
+        other = Article.objects.create(
+            title="Another journalist's independent publication",
+            content="This belongs to someone else.",
+            author=self.other_journalist,
+            approved=True,
+        )
+        pending = Article.objects.create(
+            title="My independent draft",
+            content="Not published yet.",
+            author=self.journalist,
+        )
+
+        for article, expected_valid in (
+            (own, True),
+            (other, False),
+            (pending, False),
+            (self.approved_article, False),
+        ):
+            with self.subTest(article=article.pk):
+                form = NewsletterForm(
+                    data={
+                        "title": "Independent newsletter",
+                        "description": "My independent publications.",
+                        "publisher": "",
+                        "articles": [article.pk],
+                    },
+                    user=self.journalist,
+                )
+
+                self.assertEqual(form.is_valid(), expected_valid)
+
+                if not expected_valid:
+                    self.assertIn("articles", form.errors)
+
+    def test_editor_newsletter_requires_a_publisher(self):
+        """Prevent editors from creating independent newsletters."""
+        form = NewsletterForm(
+            data={
+                "title": "Editor newsletter",
+                "description": "Editors must select their publisher.",
+                "publisher": "",
+                "articles": [self.approved_article.pk],
+            },
+            user=self.editor,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("publisher", form.errors)
+
+    def test_newsletter_edit_rejects_another_publishers_article(self):
+        """Apply the same publisher restriction when editing."""
+        self.other_publisher.journalists.add(self.journalist)
+
+        newsletter = Newsletter.objects.create(
+            title="Original newsletter",
+            description="Our publisher's stories.",
+            author=self.journalist,
+            publisher=self.publisher,
+        )
+        newsletter.articles.add(self.approved_article)
+        self.client.force_login(self.journalist)
+
+        response = self.client.post(
+            reverse("news:newsletter_edit", args=[newsletter.pk]),
+            {
+                "title": "Unauthorised update",
+                "description": "An invalid selection.",
+                "publisher": self.publisher.pk,
+                "articles": [self.other_article.pk],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("articles", response.context["form"].errors)
+
+        newsletter.refresh_from_db()
+        self.assertEqual(newsletter.title, "Original newsletter")
+        self.assertEqual(
+            list(newsletter.articles.all()),
+            [self.approved_article],
+        )
+
+    def test_reader_feed_explains_subscription_matches(self):
+        """Show article sources and the subscriptions matching them."""
+        independent = Article.objects.create(
+            title="Independent feed story",
+            content="An independent publication.",
+            author=self.journalist,
+            approved=True,
+        )
+        self.client.force_login(self.reader)
+
+        for follow_publisher, follow_journalist in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            with self.subTest(
+                publisher=follow_publisher,
+                journalist=follow_journalist,
+            ):
+                self.reader.subscribed_publishers.clear()
+                self.reader.subscribed_journalists.clear()
+
+                if follow_publisher:
+                    self.reader.subscribed_publishers.add(self.publisher)
+
+                if follow_journalist:
+                    self.reader.subscribed_journalists.add(self.journalist)
+
+                response = self.client.get(
+                    reverse("news:subscribed_articles"),
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, self.publisher.name)
+                self.assertContains(response, self.journalist.username)
+
+                if follow_publisher:
+                    self.assertContains(
+                        response,
+                        "You follow this publisher.",
+                    )
+                else:
+                    self.assertNotContains(
+                        response,
+                        "You follow this publisher.",
+                    )
+
+                if follow_journalist:
+                    self.assertContains(
+                        response,
+                        "You follow this journalist.",
+                    )
+                    self.assertContains(response, independent.title)
+                    self.assertContains(response, "Independent")
+                else:
+                    self.assertNotContains(
+                        response,
+                        "You follow this journalist.",
+                    )
+                    self.assertNotContains(response, independent.title)

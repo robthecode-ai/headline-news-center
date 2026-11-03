@@ -9,14 +9,40 @@
     {% for article in articles %}
         <article>
             <h2>{{ article.title }}</h2>
+
+            <p>
+                {% if article.publisher %}
+                    Publisher: {{ article.publisher.name }}
+                {% else %}
+                    Independently published
+                {% endif %}
+            </p>
+
             <a href="{% url 'news:article_edit' article.pk %}">Edit</a>
             <a href="{% url 'news:article_delete' article.pk %}">Delete</a>
 
+            {% if not article.publisher %}
+                {% if not article.approved or not article.email_sent or not article.api_logged %}
+                    <form method="post"
+                          action="{% url 'news:article_publish' article.pk %}">
+                        {% csrf_token %}
+
+                        {% if article.approved %}
+                            <button type="submit">Retry publication</button>
+                        {% else %}
+                            <button type="submit">Publish</button>
+                        {% endif %}
+                    </form>
+                {% endif %}
+            {% endif %}
+
             <p>
                 {% if article.approved %}
-                    Approved
+                    Published
+                {% elif article.publisher %}
+                    Pending editorial approval
                 {% else %}
-                    Pending approval
+                    Draft
                 {% endif %}
             </p>
         </article>
